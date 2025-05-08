@@ -1,12 +1,19 @@
 import asyncio
 import atexit
 import binascii
+import platform
 import random
 from logging import getLogger
 from typing import Any
 
-from bless.backends.bluezdbus.dbus.advertisement import BlueZLEAdvertisement, Type
-from bless.backends.bluezdbus.server import BlessServerBlueZDBus
+os_name = platform.system()
+
+if os_name == "Linux":
+    from bless.backends.bluezdbus.dbus.advertisement import BlueZLEAdvertisement, Type
+    from bless.backends.bluezdbus.server import BlessServerBlueZDBus
+elif os_name == "Windows":
+    # How to make advertisement?
+    from bless.backends.winrt.server import BlessServerWinRT
 from dbus_next.signature import Variant
 from zeroconf import IPVersion, ServiceStateChange, Zeroconf
 from zeroconf.asyncio import (
@@ -84,34 +91,66 @@ class AsyncRunner:
 
 
 async def trigger_devices() -> None:
-    # I actually have zero clue what I'm doing here
+    if os_name == "Windows":
+        # I actually have less than zero clue what I'm doing here`
+        """ FOR THIS COMMIT I JUST COPIED THE LINUX CODE THAT DOES NOT WORK ON LINUX """
 
-    server = BlessServerBlueZDBus(name="pyquickshare")
-    await server.setup_task  # pyright: ignore[reportUnknownMemberType]
-    bluetooth.debug("Connected to BlueZ D-Bus")  # Hello :3
+        server = BlessServerBlueZDBus(name="pyquickshare")
+        await server.setup_task  # pyright: ignore[reportUnknownMemberType]
+        bluetooth.debug("Connected to BlueZ D-Bus")  # Hello :3
 
-    await server.app.set_name(server.adapter, server.name)
-    advertisement = BlueZLEAdvertisement(Type.BROADCAST, 2, server.app)
+        await server.app.set_name(server.adapter, server.name)
+        advertisement = BlueZLEAdvertisement(Type.BROADCAST, 2, server.app)
 
-    advertisement.ServiceUUIDs = [SERVICE_UUID]
-    advertisement.ServiceData = {
-        SERVICE_UUID: Variant("ay", SERVICE_DATA + random.randbytes(9)),  # noqa: S311 - random is fine here
-    }
+        advertisement.ServiceUUIDs = [SERVICE_UUID]
+        advertisement.ServiceData = {
+            SERVICE_UUID: Variant("ay", SERVICE_DATA + random.randbytes(9)),  # noqa: S311 - random is fine here
+        }
 
-    server.app.advertisements = [advertisement]
+        server.app.advertisements = [advertisement]
 
-    server.bus.export(advertisement.path, advertisement)
+        server.bus.export(advertisement.path, advertisement)
 
-    iface = server.adapter.get_interface("org.bluez.LEAdvertisingManager1")
+        iface = server.adapter.get_interface("org.bluez.LEAdvertisingManager1")
 
-    await iface.call_register_advertisement(  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-        advertisement.path,
-        {},
-    )
+        await iface.call_register_advertisement(  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+            advertisement.path,
+            {},
+        )
 
-    bluetooth.debug("Advertising Quick Share service")
+        bluetooth.debug("Advertising Quick Share service")
 
-    # Wait forever, BlueZ keeps advertising while the D-Bus connection is open
+        # Wait forever, BlueZ keeps advertising while the D-Bus connection is open
+    
+    elif os_name == "Linux":
+        # I actually have zero clue what I'm doing here
+
+        server = BlessServerBlueZDBus(name="pyquickshare")
+        await server.setup_task  # pyright: ignore[reportUnknownMemberType]
+        bluetooth.debug("Connected to BlueZ D-Bus")  # Hello :3
+
+        await server.app.set_name(server.adapter, server.name)
+        advertisement = BlueZLEAdvertisement(Type.BROADCAST, 2, server.app)
+
+        advertisement.ServiceUUIDs = [SERVICE_UUID]
+        advertisement.ServiceData = {
+            SERVICE_UUID: Variant("ay", SERVICE_DATA + random.randbytes(9)),  # noqa: S311 - random is fine here
+        }
+
+        server.app.advertisements = [advertisement]
+
+        server.bus.export(advertisement.path, advertisement)
+
+        iface = server.adapter.get_interface("org.bluez.LEAdvertisingManager1")
+
+        await iface.call_register_advertisement(  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+            advertisement.path,
+            {},
+        )
+
+        bluetooth.debug("Advertising Quick Share service")
+
+        # Wait forever, BlueZ keeps advertising while the D-Bus connection is open
     await asyncio.Future()
 
 
