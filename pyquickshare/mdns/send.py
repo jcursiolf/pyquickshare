@@ -19,6 +19,8 @@ elif os_name == "Windows":
         BluetoothLEAdvertisement,
     )
     from winrt.windows.storage.streams import DataWriter
+    from typing import Any, cast
+    from zeroconf import DNSQuestionType
 
 from zeroconf import IPVersion, ServiceStateChange, Zeroconf
 from zeroconf.asyncio import (
@@ -173,12 +175,25 @@ async def discover_services(timeout: float = 10) -> asyncio.Queue[AsyncServiceIn
     task = create_task(trigger_devices())
     _tasks.append(task)
 
-    runner = AsyncRunner()
+    if os_name == "Linux":
+        runner = AsyncRunner()
 
-    task = create_task(runner.async_run())
-    _tasks.append(task)
+        task = create_task(runner.async_run())
+        _tasks.append(task)
 
-    return runner.result
+        return runner.result
+    elif os_name == "Windows":
+        # Create and set a new event loop as loop = asyncio.get_event_loop() is deprecated in Python 3.11
+        # loop = asyncio.new_event_loop()
+        # asyncio.set_event_loop(loop)
+        runner = AsyncRunnerWindows()
+        # try:
+        #     loop.run_until_complete(runner.async_run())
+        # except:
+        #     loop.run_until_complete(runner.async_close())
+        task = create_task(runner.async_run())
+        _tasks.append(task)
+        return runner.result
 
 
 @atexit.register
@@ -188,3 +203,96 @@ def cleanup() -> None:
 
     for task in _tasks:
         task.cancel()
+
+DEVICE_INFO_SERVICE: str = "_device-info._tcp.local."
+QUICK_SHARE: str = "_FC9F5ED42C8A._tcp.local."
+
+ALL_SERVICES = [
+    QUICK_SHARE
+]
+
+log = getLogger(__name__)
+
+_PENDING_TASKS: set[asyncio.Task] = set()
+
+def async_on_service_state_change(
+    zeroconf: Zeroconf, service_type: str, name: str, state_change: ServiceStateChange
+) -> None:
+    print(f"Service {name} of type {service_type} state changed: {state_change}")
+    if state_change is not ServiceStateChange.Added:
+        return
+    base_name = name[: -len(service_type) - 1]
+    device_name = f"{base_name}.{DEVICE_INFO_SERVICE}"
+    task = asyncio.ensure_future(_async_show_service_info(zeroconf, service_type, name))
+    _PENDING_TASKS.add(task)
+    task.add_done_callback(_PENDING_TASKS.discard)
+    # Also probe for device info
+    task = asyncio.ensure_future(_async_show_service_info(zeroconf, DEVICE_INFO_SERVICE, device_name))
+    _PENDING_TASKS.add(task)
+    task.add_done_callback(_PENDING_TASKS.discard)
+
+
+async def _async_show_service_info(zeroconf: Zeroconf, service_type: str, name: str) -> None:
+    info = AsyncServiceInfo(service_type, name)
+    await info.async_request(zeroconf, 3000, question_type=DNSQuestionType.QU)
+    print(f"Info from zeroconf.get_service_info: {info!r}")
+    if info:
+        addresses = [f"{addr}:{cast(int, info.port)}" for addr in info.parsed_addresses()]
+        print(f"  Name: {name}")
+        print(f"  Addresses: {', '.join(addresses)}")
+        print(f"  Weight: {info.weight}, priority: {info.priority}")
+        print(f"  Server: {info.server}")
+        if info.properties:
+            print("  Properties are:")
+            for key, value in info.properties.items():
+                print(f"    {key!r}: {value!r}")
+        else:
+            print("  No properties")
+    else:
+        print("  No info")
+    print("\n")
+
+    # TODO
+    """
+    async def async_display_service_info(
+        self,
+        zeroconf: Zeroconf,
+        service_type: str,
+        name: str,
+    ) -> None:
+        info = AsyncServiceInfo(service_type, name)
+        await info.async_request(zeroconf, 3000)
+
+        if info:
+            await self.result.put(info)
+    """
+
+
+class AsyncRunnerWindows:
+    def __init__(self) -> None:
+        self.result: asyncio.Queue[AsyncServiceInfo] = asyncio.Queue()
+        self.aiobrowser: AsyncServiceBrowser | None = None
+        self.aiozc: AsyncZeroconf | None = None
+
+    async def async_run(self) -> None:
+        self.aiozc = AsyncZeroconf(ip_version=IPVersion.V4Only)
+        await self.aiozc.zeroconf.async_wait_for_start()
+        print(f"\nBrowsing {ALL_SERVICES} service(s), press Ctrl-C to exit...\n")
+        kwargs = {
+            "handlers": [async_on_service_state_change],
+            "question_type": DNSQuestionType.QU,
+        }
+        # if self.args.target:
+        #     kwargs["addr"] = self.args.target
+        self.aiobrowser = AsyncServiceBrowser(
+            self.aiozc.zeroconf,
+            ALL_SERVICES,
+            **kwargs,  # type: ignore[arg-type]
+        )
+        await asyncio.Event().wait()
+
+    async def async_close(self) -> None:
+        assert self.aiozc is not None
+        assert self.aiobrowser is not None
+        await self.aiobrowser.async_cancel()
+        await self.aiozc.async_close()
