@@ -13,9 +13,12 @@ if os_name == "Linux":
     from bless.backends.bluezdbus.server import BlessServerBlueZDBus
     from dbus_next.signature import Variant
 elif os_name == "Windows":
-    # How to make advertisement?
-    #from bless.backends.winrt.server import BlessServerWinRT
-    from bless import GATTCharacteristicProperties, GATTAttributePermissions, BlessServer
+    from winrt.windows.devices.bluetooth.advertisement import (
+        BluetoothLEAdvertisementPublisher,
+        BluetoothLEAdvertisementDataSection,
+        BluetoothLEAdvertisement,
+    )
+    from winrt.windows.storage.streams import DataWriter
 from zeroconf import IPVersion, ServiceStateChange, Zeroconf
 from zeroconf.asyncio import (
     AsyncServiceBrowser,
@@ -25,6 +28,7 @@ from zeroconf.asyncio import (
 
 from ..common import create_task, tasks
 
+BLE_GAP_AD_TYPE_SERVICE_DATA = 0x16  # Service Data - 16-bit UUID.
 SERVICE_UUID = "FE2C"
 SERVICE_DATA = binascii.unhexlify("fc128e0142000000000000000000")
 
@@ -95,87 +99,37 @@ async def trigger_devices() -> None:
     if os_name == "Windows":
         # I actually have less than zero clue what I'm doing here`
         bluetooth.debug("It is windows!")
-        server = BlessServer(name="pyquickshare_windows")
         
-        #THERE IS NO SETUP_TASK FOR THE WINRT SERVER
-        #await server.setup_task  # pyright: ignore[reportUnknownMemberType]
+        # Service UUID (16-bit): FE2C -> Little Endian
+        uuid_fe2c = b'\x2C\xFE'
         
-        bluetooth.debug("Connected to whatever WinRT uses")
-
-        # THERE IS NO server.app THE WINRT SERVER
-        # await server.app.set_name(server.adapter, server.name)
+        # Service Data:
+        service_data = bytes.fromhex("fc128e014200000000000000000001020304050607080910")
         
-        # THERE IS NO BlueZLEAdvertisement EQUIVALENT FOR THE  WINRT SERVER
-        # Type.BROADCAST is defined in bless\backends\bluezdbus\dbus\advertisement.py and has no counterpart in WinRT
-        # There is no server.app in the WinRT server
-        # advertisement = BlueZLEAdvertisement(Type.BROADCAST, 2, server.app)
-
-        # HOW DO I PASS THE SERVICE_UUID to WinRT???
-        # advertisement.ServiceUUIDs = [SERVICE_UUID]S
-
-        # from https://github.com/Martichou/rquickshare/blob/master/core_lib/src/hdl/ble.rs
-        SERVICE_UUID_SHARING = "0000fe2c-0000-1000-8000-00805f9b34fb"
+        # Full Service Data payload: UUID + Service Data
+        service_data_payload = uuid_fe2c + service_data
         
-        await server.add_new_service(uuid=SERVICE_UUID_SHARING)
-        bluetooth.debug(f"Added new service with UUID {SERVICE_UUID_SHARING}")
+        # Create DataWriter and buffer
+        writer = DataWriter()
+        writer.write_bytes(service_data_payload)
+        buffer = writer.detach_buffer()
         
+        # Create BLE advertisement
+        advertisement = BluetoothLEAdvertisement()
         
-        # HOW DO I PASS THE SERVICE_DATA to WinRT???
-        # Variant is defined on dbus_next\signature.py and clearly on Windows.
-        # advertisement.ServiceData = {
-        #     SERVICE_UUID: Variant("ay", SERVICE_DATA + random.randbytes(9)),  # noqa: S311 - random is fine here
-        # }
-
-        # Add a Characteristic to the service
-        # I have no idea what to put in the char uuid
-        service_char_uuid = "51FF12BB-3ED8-46E5-B4F9-D64E2FEC021B"
-        
-        # I think just broadcast would be enough, but who knows?
-        service_properties = (
-            GATTCharacteristicProperties.read |
-            GATTCharacteristicProperties.write |
-            GATTCharacteristicProperties.indicate
-            )
-
-        # NRF Connect says the Linux version has no flags....
-        service_properties = 0
-        
-        # Got this from https://github.com/rohitsangwan01/ble_peripheral_windows/blob/main/python/ble__handler.py
-        service_permissions = (
-            GATTAttributePermissions.readable |
-            GATTAttributePermissions.writeable
+        # Add the service data section
+        service_data_section = BluetoothLEAdvertisementDataSection(
+            BLE_GAP_AD_TYPE_SERVICE_DATA,
+            buffer
         )
-        
-        # What should the service value be?
-        service_data_value = SERVICE_DATA + random.randbytes(9)
-        bluetooth.debug("Service value?")
-        
-        await server.add_new_characteristic(
-            service_uuid=SERVICE_UUID_SHARING,
-            char_uuid=service_char_uuid,
-            properties=service_properties,
-            value=None,
-            permissions=service_permissions
-            )
-        bluetooth.debug(f"Characteristics added! {server.get_characteristic(service_char_uuid)}")
+        advertisement.data_sections.append(service_data_section)
 
-        
-        # server.app.advertisements = [advertisement]
+        # Create and start the BLE advertisement publisher
+        publisher = BluetoothLEAdvertisementPublisher(advertisement)
+        publisher.start()
+        bluetooth.debug("BLE advertising started.")
 
-        # server.bus.export(advertisement.path, advertisement)
-
-        # There is no server.adapter in WinRT backend.
-        # iface = server.adapter.get_interface("org.bluez.LEAdvertisingManager1")
-
-        # await iface.call_register_advertisement(  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-            # advertisement.path,
-            # {},
-        # )
-
-        await server.start()
-        bluetooth.debug("Advertising Quick Share service")
-
-        # Wait forever, BlueZ keeps advertising while the D-Bus connection is open
+        # I do not know how to stop or even what to do after this.
     
     elif os_name == "Linux":
         # I actually have zero clue what I'm doing here
