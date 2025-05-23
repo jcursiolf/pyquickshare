@@ -19,6 +19,7 @@ elif os_name == "Windows":
         BluetoothLEAdvertisement,
     )
     from winrt.windows.storage.streams import DataWriter
+
 from zeroconf import IPVersion, ServiceStateChange, Zeroconf
 from zeroconf.asyncio import (
     AsyncServiceBrowser,
@@ -129,7 +130,12 @@ async def trigger_devices() -> None:
         publisher.start()
         bluetooth.debug("BLE advertising started.")
 
-        # I do not know how to stop or even what to do after this.
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except:
+            publisher.stop()
+            print("BLE advertising stopped.")
     
     elif os_name == "Linux":
         # I actually have zero clue what I'm doing here
@@ -160,7 +166,7 @@ async def trigger_devices() -> None:
         bluetooth.debug("Advertising Quick Share service")
 
         # Wait forever, BlueZ keeps advertising while the D-Bus connection is open
-    await asyncio.Future()
+        await asyncio.Future()
 
 
 async def discover_services(timeout: float = 10) -> asyncio.Queue[AsyncServiceInfo]:  # noqa: ARG001 # TODO: actually timeout
