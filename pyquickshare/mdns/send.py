@@ -215,63 +215,6 @@ log = getLogger(__name__)
 
 _PENDING_TASKS: set[asyncio.Task] = set()
 
-""" 
-def async_on_service_state_change(
-    zeroconf: Zeroconf, service_type: str, name: str, state_change: ServiceStateChange
-) -> None:
-    print(f"Service {name} of type {service_type} state changed: {state_change}")
-    if state_change is not ServiceStateChange.Added:
-        return
-    base_name = name[: -len(service_type) - 1]
-    device_name = f"{base_name}.{DEVICE_INFO_SERVICE}"
-    task = asyncio.ensure_future(_async_show_service_info(zeroconf, service_type, name))
-    _PENDING_TASKS.add(task)
-    task.add_done_callback(_PENDING_TASKS.discard)
-    # Also probe for device info
-    task = asyncio.ensure_future(_async_show_service_info(zeroconf, DEVICE_INFO_SERVICE, device_name))
-    _PENDING_TASKS.add(task)
-    task.add_done_callback(_PENDING_TASKS.discard)
-"""
-
-
-"""
-async def _async_show_service_info(zeroconf: Zeroconf, service_type: str, name: str) -> None:
-    info = AsyncServiceInfo(service_type, name)
-    await info.async_request(zeroconf, 3000, question_type=DNSQuestionType.QU)
-    print(f"Info from zeroconf.get_service_info: {info!r}")
-    if info:
-        addresses = [f"{addr}:{cast(int, info.port)}" for addr in info.parsed_addresses()]
-        print(f"  Name: {name}")
-        print(f"  Addresses: {', '.join(addresses)}")
-        print(f"  Weight: {info.weight}, priority: {info.priority}")
-        print(f"  Server: {info.server}")
-        if info.properties:
-            print("  Properties are:")
-            for key, value in info.properties.items():
-                print(f"    {key!r}: {value!r}")
-        else:
-            print("  No properties")
-    else:
-        print("  No info")
-    print("\n")
-"""
-
-# TODO
-"""
-async def async_display_service_info(
-    self,
-    zeroconf: Zeroconf,
-    service_type: str,
-    name: str,
-) -> None:
-    info = AsyncServiceInfo(service_type, name)
-    await info.async_request(zeroconf, 3000)
-
-    if info:
-        await self.result.put(info)
-"""
-
-
 class AsyncRunnerWindows:
     def __init__(self) -> None:
         self.result: asyncio.Queue[AsyncServiceInfo] = asyncio.Queue()
@@ -304,7 +247,7 @@ class AsyncRunnerWindows:
     def async_on_service_state_change(self, 
         zeroconf: Zeroconf, service_type: str, name: str, state_change: ServiceStateChange
     ) -> None:
-        print(f"Service {name} of type {service_type} state changed: {state_change}")
+        logger.debug("Discovered Quick Share service: %s with state changed: %s", name, state_change)
         if state_change is not ServiceStateChange.Added:
             return
         base_name = name[: -len(service_type) - 1]
@@ -320,19 +263,7 @@ class AsyncRunnerWindows:
     async def _async_show_service_info(self, zeroconf: Zeroconf, service_type: str, name: str) -> None:
         info = AsyncServiceInfo(service_type, name)
         await info.async_request(zeroconf, 3000, question_type=DNSQuestionType.QU)
-        print(f"Info from zeroconf.get_service_info: {info!r}")
         if info:
-            addresses = [f"{addr}:{cast(int, info.port)}" for addr in info.parsed_addresses()]
-            print(f"  Name: {name}")
-            print(f"  Addresses: {', '.join(addresses)}")
-            print(f"  Weight: {info.weight}, priority: {info.priority}")
-            print(f"  Server: {info.server}")
-            if info.properties:
-                print("  Properties are:")
-                for key, value in info.properties.items():
-                    print(f"    {key!r}: {value!r}")
-            else:
-                print("  No properties")
+            await self.result.put(info)
         else:
-            print("  No info")
-        print("\n")
+            logger.debug("  No info")
