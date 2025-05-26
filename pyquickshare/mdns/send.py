@@ -213,17 +213,16 @@ class AsyncRunnerWindows:
     async def async_run(self) -> None:
         self.aiozc = AsyncZeroconf(ip_version=IPVersion.V4Only)
         await self.aiozc.zeroconf.async_wait_for_start()
-        print(f"\nBrowsing {ALL_SERVICES} service(s), press Ctrl-C to exit...\n")
+        print(f"\nBrowsing {ALL_SERVICES} service(s).")
         kwargs = {
             "handlers": [self.async_on_service_state_change],
             "question_type": DNSQuestionType.QU,
         }
-        # if self.args.target:
-        #     kwargs["addr"] = self.args.target
+        
         self.aiobrowser = AsyncServiceBrowser(
             self.aiozc.zeroconf,
             ALL_SERVICES,
-            **kwargs,  # type: ignore[arg-type]
+            **kwargs,
         )
         await asyncio.Event().wait()
 
@@ -239,13 +238,7 @@ class AsyncRunnerWindows:
         logger.debug("Discovered Quick Share service: %s with state changed: %s", name, state_change)
         if state_change is not ServiceStateChange.Added:
             return
-        base_name = name[: -len(service_type) - 1]
-        device_name = f"{base_name}.{DEVICE_INFO_SERVICE}"
         task = asyncio.ensure_future(self._async_show_service_info(zeroconf, service_type, name))
-        _PENDING_TASKS.add(task)
-        task.add_done_callback(_PENDING_TASKS.discard)
-        # Also probe for device info
-        task = asyncio.ensure_future(self._async_show_service_info(zeroconf, DEVICE_INFO_SERVICE, device_name))
         _PENDING_TASKS.add(task)
         task.add_done_callback(_PENDING_TASKS.discard)
     
