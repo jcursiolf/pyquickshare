@@ -16,6 +16,17 @@ pyquickshare has following expectations from the system:
 
 As these are de-facto standards on Linux, pyquickshare should work on most Linux distributions.
 
+### Windows
+For Windows, it uses [pywinrt](https://github.com/pywinrt/pywinrt), specifically `winrt-Windows.Storage` and `winrt-Windows.Devices.Bluetooth`.
+A test script can be run on Windows:
+
+```PS
+py tests\test_qs_discovery.py
+```
+
+> [!NOTE]
+> Sending and receiving file is untested.
+
 ### Firewalls
 
 As Quick Share uses a direct connection between devices, it is necessary to allow incoming connections on the advertised port. firewalld is supported out of the box (but not required).
