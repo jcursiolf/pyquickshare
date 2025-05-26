@@ -99,7 +99,37 @@ class AsyncRunner:
 
 
 async def trigger_devices() -> None:
-    if os_name == "Windows":
+    if os_name == "Linux":
+        # I actually have zero clue what I'm doing here
+
+        server = BlessServerBlueZDBus(name="pyquickshare_linux")
+        await server.setup_task  # pyright: ignore[reportUnknownMemberType]
+        bluetooth.debug("Connected to BlueZ D-Bus")  # Hello :3
+
+        await server.app.set_name(server.adapter, server.name)
+        advertisement = BlueZLEAdvertisement(Type.BROADCAST, 2, server.app)
+
+        advertisement.ServiceUUIDs = [SERVICE_UUID]
+        advertisement.ServiceData = {
+            SERVICE_UUID: Variant("ay", SERVICE_DATA + random.randbytes(9)),  # noqa: S311 - random is fine here
+        }
+
+        server.app.advertisements = [advertisement]
+
+        server.bus.export(advertisement.path, advertisement)
+
+        iface = server.adapter.get_interface("org.bluez.LEAdvertisingManager1")
+
+        await iface.call_register_advertisement(  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+            advertisement.path,
+            {},
+        )
+
+        bluetooth.debug("Advertising Quick Share service")
+
+        # Wait forever, BlueZ keeps advertising while the D-Bus connection is open
+        await asyncio.Future()
+    elif os_name == "Windows":
         # I actually have less than zero clue what I'm doing here`
         bluetooth.debug("It is windows!")
         
@@ -138,37 +168,6 @@ async def trigger_devices() -> None:
         except:
             publisher.stop()
             print("BLE advertising stopped.")
-    
-    elif os_name == "Linux":
-        # I actually have zero clue what I'm doing here
-
-        server = BlessServerBlueZDBus(name="pyquickshare_linux")
-        await server.setup_task  # pyright: ignore[reportUnknownMemberType]
-        bluetooth.debug("Connected to BlueZ D-Bus")  # Hello :3
-
-        await server.app.set_name(server.adapter, server.name)
-        advertisement = BlueZLEAdvertisement(Type.BROADCAST, 2, server.app)
-
-        advertisement.ServiceUUIDs = [SERVICE_UUID]
-        advertisement.ServiceData = {
-            SERVICE_UUID: Variant("ay", SERVICE_DATA + random.randbytes(9)),  # noqa: S311 - random is fine here
-        }
-
-        server.app.advertisements = [advertisement]
-
-        server.bus.export(advertisement.path, advertisement)
-
-        iface = server.adapter.get_interface("org.bluez.LEAdvertisingManager1")
-
-        await iface.call_register_advertisement(  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-            advertisement.path,
-            {},
-        )
-
-        bluetooth.debug("Advertising Quick Share service")
-
-        # Wait forever, BlueZ keeps advertising while the D-Bus connection is open
-        await asyncio.Future()
 
 
 async def discover_services(timeout: float = 10) -> asyncio.Queue[AsyncServiceInfo]:  # noqa: ARG001 # TODO: actually timeout
@@ -178,22 +177,12 @@ async def discover_services(timeout: float = 10) -> asyncio.Queue[AsyncServiceIn
     if os_name == "Linux":
         runner = AsyncRunner()
 
-        task = create_task(runner.async_run())
-        _tasks.append(task)
-
-        return runner.result
     elif os_name == "Windows":
-        # Create and set a new event loop as loop = asyncio.get_event_loop() is deprecated in Python 3.11
-        # loop = asyncio.new_event_loop()
-        # asyncio.set_event_loop(loop)
         runner = AsyncRunnerWindows()
-        # try:
-        #     loop.run_until_complete(runner.async_run())
-        # except:
-        #     loop.run_until_complete(runner.async_close())
-        task = create_task(runner.async_run())
-        _tasks.append(task)
-        return runner.result
+        
+    task = create_task(runner.async_run())
+    _tasks.append(task)
+    return runner.result
 
 
 @atexit.register
