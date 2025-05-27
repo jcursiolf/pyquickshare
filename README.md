@@ -10,11 +10,26 @@ An implementation of Quick Share in Python.
 
 ## System requirements
 
+### Linux
+
 pyquickshare has following expectations from the system:
 - some mDNS implementation (avahi, systemd-resolved, etc.)
 - Bluetooth stack using BlueZ reachable via D-Bus
 
 As these are de-facto standards on Linux, pyquickshare should work on most Linux distributions.
+
+### Windows
+pyquickshare has the following expectations from the system:
+- [pywinrt](https://github.com/pywinrt/pywinrt), specifically `winrt-Windows.Storage` and `winrt-Windows.Devices.Bluetooth` to access the Bluetooth WinRT API.
+
+A test script can be run on Windows:
+
+```PS
+py tests\test_qs_discovery.py
+```
+
+> [!NOTE]
+> Sending and receiving files is untested.
 
 ### Firewalls
 
